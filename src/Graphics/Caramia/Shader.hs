@@ -24,7 +24,7 @@
 
 module Graphics.Caramia.Shader
     (
-    -- * Creating new shaders.
+    -- * Creating new shaders
       newShader
     , newShaderB
     , newShaderBL
@@ -32,20 +32,23 @@ module Graphics.Caramia.Shader
     , newPipelineVF
     , Shader()
     , Pipeline()
-    -- ** Attribute bindings
+    -- * Checking errors
+    , getShaderLog
+    , getPipelineLog
+    -- * Attribute bindings
     , AttributeBindings
-      -- * Uniforms
+    -- * Uniforms
     , setUniform
     , getUniformLocation
     , Uniformable()
     , UniformLocation
-      -- * Shader stages
+    -- * Shader stages
     , ShaderStage(..)
-      -- * Views
+    -- * Views
     , viewStage
-      -- * Misc
+    -- * Misc
     , nopPipeline
-      -- * Exception
+    -- * Exceptions
     , ShaderCompilationError(..)
     , ShaderLinkingError(..)
     , ShaderBuildingError(..)
@@ -200,6 +203,22 @@ newShader :: MonadIO m
 newShader source_code stage = liftIO $ T.withCStringLen source_code $ \(cstr, len) ->
     newShaderGeneric cstr len stage
 
+getShaderLogGeneric :: GLuint -> IO T.Text
+getShaderLogGeneric shader_name = do
+    log_len <- gget $ glGetShaderiv shader_name GL_INFO_LOG_LENGTH
+    if log_len /= 0
+        then allocaBytes (safeFromIntegral log_len) $ \str -> do
+            glGetShaderInfoLog shader_name log_len nullPtr str
+            T.peekCStringLen ( str
+                             , safeFromIntegral $ max 0 $ log_len-1 )
+        else return ""
+
+-- | Gets a compilation log for a shader.
+getShaderLog :: MonadIO m => Shader -> m T.Text
+getShaderLog shader =
+    liftIO $ withResource (resource shader) $
+    \(CompiledShader shader_name) -> getShaderLogGeneric shader_name
+
 -- | Checks that there are no compilation errors in an OpenGL shader object.
 --
 -- DELETES the shader if there were errors.
@@ -207,13 +226,25 @@ checkCompilationErrors :: GLuint -> IO ()
 checkCompilationErrors shader_name = do
     status <- gget $ glGetShaderiv shader_name GL_COMPILE_STATUS
     when (status == GL_FALSE) $ do
-        log_len <- gget $ glGetShaderiv shader_name GL_INFO_LOG_LENGTH
-        allocaBytes (safeFromIntegral log_len) $ \str -> do
-            glGetShaderInfoLog shader_name log_len nullPtr str
-            log <- T.peekCStringLen ( str
-                                    , safeFromIntegral $ max 0 $ log_len-1 )
-            glDeleteShader shader_name
-            throwM $ ShaderCompilationError log
+        log <- getShaderLogGeneric shader_name
+        glDeleteShader shader_name
+        throwM $ ShaderCompilationError log
+
+getPipelineLogGeneric :: GLuint -> IO T.Text
+getPipelineLogGeneric program_name = do
+    log_len <- gget $ glGetProgramiv program_name GL_INFO_LOG_LENGTH
+    if log_len /= 0
+        then allocaBytes (safeFromIntegral log_len) $ \str -> do
+            glGetProgramInfoLog program_name log_len nullPtr str
+            T.peekCStringLen ( str
+                                   , safeFromIntegral $ max 0 $ log_len-1)
+        else return ""
+
+-- | Gets a compilation log for a pipeline.
+getPipelineLog :: MonadIO m => Pipeline -> m T.Text
+getPipelineLog program =
+    liftIO $ withResource (resourcePL program) $
+    \(Pipeline_ program_name) -> getPipelineLogGeneric program_name
 
 -- | Same as `checkCompilationErrors` but for linking.
 --
@@ -222,13 +253,9 @@ checkLinkingErrors :: GLuint -> IO ()
 checkLinkingErrors program_name = do
     status <- gget $ glGetProgramiv program_name GL_LINK_STATUS
     when (status == GL_FALSE) $ do
-        log_len <- gget $ glGetProgramiv program_name GL_INFO_LOG_LENGTH
-        allocaBytes (safeFromIntegral log_len) $ \str -> do
-            glGetProgramInfoLog program_name log_len nullPtr str
-            log <- T.peekCStringLen ( str
-                                    , safeFromIntegral $ max 0 $ log_len-1)
-            glDeleteProgram program_name
-            throwM $ ShaderLinkingError log
+        log <- getPipelineLogGeneric program_name
+        glDeleteProgram program_name
+        throwM $ ShaderLinkingError log
 
 -- | Creates a pipeline from vertex and fragment shader source.
 --
