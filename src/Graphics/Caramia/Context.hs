@@ -100,7 +100,7 @@ giveContext action = mask $ \restore -> do
         tid <- myThreadId
         atomicModifyIORef' runningContexts $ \old_map ->
             ( M.insert tid cid old_map, () )
-    finally (restore $ insides >> action) (flushDebugMessages >> scrapContext)
+    finally (restore $ insides >> action) scrapContext
   where
     insides = liftIO $ do
         should_activate_debug_mode <- isJust <$> lookupEnv "CARAMIA_OPENGL_DEBUG"
@@ -170,7 +170,6 @@ runPendingFinalizers = liftIO $ mask_ $ do
             case result of
                 Left exc -> scrapContext >> throwM (exc :: SomeException)
                 Right () -> return ()
-    flushDebugMessages
 
 -- | Schedules a finalizer to be run in a Caramia context.
 --

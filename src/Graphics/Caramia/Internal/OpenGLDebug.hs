@@ -3,8 +3,7 @@
 {-# LANGUAGE NoImplicitPrelude, DeriveDataTypeable #-}
 
 module Graphics.Caramia.Internal.OpenGLDebug
-    ( activateDebugMode
-    , flushDebugMessages )
+    ( activateDebugMode )
     where
 
 import Graphics.GL.Ext.KHR.Debug
@@ -12,13 +11,10 @@ import Graphics.GL.Ext.KHR.Debug
 import Graphics.Caramia.Prelude
 import Graphics.Caramia.Internal.OpenGLCApi
 import Graphics.Caramia.Internal.ContextLocalData
-import Control.Monad.Trans.State.Strict
 import Control.Monad.IO.Class
 import Control.Monad.Catch
 import System.IO
-import Foreign.Storable
 import Foreign.C.String
-import Foreign.Marshal.Array
 import Foreign.Ptr
 
 newtype DebugModeActivated = DebugModeActivated Bool
@@ -26,6 +22,8 @@ newtype DebugModeActivated = DebugModeActivated Bool
 
 activateDebugMode :: IO ()
 activateDebugMode = when gl_KHR_debug $ mask_ $ do
+    printFunc <- mkPrintDebugMessage printDebugMessage
+    glDebugMessageCallback printFunc nullPtr
     glDebugMessageControl GL_DONT_CARE
                           GL_DONT_CARE
                           GL_DONT_CARE
@@ -42,50 +40,20 @@ activateDebugMode = when gl_KHR_debug $ mask_ $ do
                              cstr
     storeContextLocalData (DebugModeActivated True)
 
-flushDebugMessages :: MonadIO m => m ()
-flushDebugMessages = liftIO $ do
-    DebugModeActivated debug_mode <-
-        retrieveContextLocalData $ return $ DebugModeActivated False
-    when debug_mode $
-        allocaArray 65535 $ \cstr_msg ->
-        allocaArray maxMsgs $ \sources ->
-        allocaArray maxMsgs $ \types ->
-        allocaArray maxMsgs $ \ids ->
-        allocaArray maxMsgs $ \severities ->
-        allocaArray maxMsgs $ \lengths -> do
-            num_msgs <- fromIntegral <$>
-                        glGetDebugMessageLog (fromIntegral maxMsgs)
-                                            65535
-                                            sources
-                                            types
-                                            ids
-                                            severities
-                                            lengths
-                                            cstr_msg
+type GLDebugProc = GLenum -> GLenum -> GLuint -> GLenum -> GLsizei -> Ptr GLchar -> Ptr () -> IO ()
 
-            flip evalStateT cstr_msg $ for_ [0..num_msgs-1] $ \index -> do
-                src <- peo sources index
-                typ <- peo types index
-                id <- peo ids index
-                severity <- peo severities index
-                length <- peo lengths index
-                cur_ptr <- get
+foreign import ccall "wrapper"
+  mkPrintDebugMessage :: GLDebugProc -> IO (FunPtr GLDebugProc)
 
-                str <- liftIO $ peekCStringLen (cur_ptr, fromIntegral length)
-                liftIO $ hPutStrLn stderr $
-                    "[" <> show id <> ", " <>
-                           showSrc src <> ", " <>
-                           showType typ <> ", " <>
-                           showSeverity severity <> "] " <>
-                    str
-
-                put (plusPtr cur_ptr $ fromIntegral length)
-
-            when (num_msgs >= maxMsgs) flushDebugMessages
-  where
-    peo ptr idx = liftIO $ peekElemOff ptr idx
-
-    maxMsgs = 10000
+printDebugMessage :: GLDebugProc
+printDebugMessage src typ id severity length ptr _ = do
+    str <- liftIO $ peekCStringLen (ptr, fromIntegral length)
+    liftIO $ hPutStrLn stderr $
+        "[" <> show id <> ", " <>
+        showSrc src <> ", " <>
+        showType typ <> ", " <>
+        showSeverity severity <> "] " <>
+        str
 
 showSeverity :: GLenum -> String
 showSeverity x | x == GL_DEBUG_SEVERITY_HIGH = "high"
