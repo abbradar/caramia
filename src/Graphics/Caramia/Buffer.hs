@@ -160,7 +160,7 @@ defaultBufferCreation = BufferCreation {
   , accessFlags = ReadWriteAccess }
 
 -- | Creates a new buffer according to `BufferCreation` specification.
-newBuffer :: MonadIO m
+newBuffer :: (MonadFail m, MonadIO m)
           => BufferCreation
           -> m Buffer
 newBuffer creation
