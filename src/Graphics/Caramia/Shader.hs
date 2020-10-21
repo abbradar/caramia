@@ -36,7 +36,9 @@ module Graphics.Caramia.Shader
     , getShaderLog
     , getPipelineLog
     -- * Attribute bindings
+    , getAttributeLocation
     , AttributeBindings
+    , AttributeLocation
     -- * Uniforms
     , setUniform
     , getUniformLocation
@@ -64,7 +66,6 @@ import qualified Data.ByteString.Lazy as BL
 import Data.Data ( Data )
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
 import qualified Data.Text.Foreign as T
 import Foreign
 import Foreign.C.Types
@@ -83,7 +84,8 @@ import Linear.V2
 import Linear.V3
 import Linear.V4
 
-type UniformLocation = Int
+type UniformLocation = GLuint
+type AttributeLocation = GLuint
 
 -- TODO: add tesselation shaders
 
@@ -279,7 +281,7 @@ newPipelineVF vert_src frag_src bindings = liftIO $ do
 --
 -- You can use `mapKeys` or `mapKeysMonotonic` to change the key and `fmap` to
 -- map indices.
-type AttributeBindings = M.Map B.ByteString GLuint
+type AttributeBindings = M.Map B.ByteString AttributeLocation
 
 -- | Creates a pipeline composed of different shaders.
 newPipeline :: MonadIO m
@@ -690,16 +692,23 @@ instance Uniformable (M44 Float) where
 cdouble2Float :: CDouble -> Float
 cdouble2Float (CDouble dbl) = double2Float dbl
 
--- | Returns a uniform location for a given name.
---
--- The uniform may not be in the shader or it may not be active. If this
--- happens, a special uniform location is returned that can be used in
--- `setUniform` to make it do nothing.
-getUniformLocation :: MonadIO m => B.ByteString -> Pipeline -> m UniformLocation
-getUniformLocation name pipeline = liftIO $ fromIntegral <$>
-    withResource (resourcePL pipeline) (\(Pipeline_ program) ->
-         B.useAsCString name $ \cstr ->
-             glGetUniformLocation program cstr)
+-- | Returns a uniform location for a given name, or ``Nothing` if uniform is
+--   not active or does not exist.
+getUniformLocation :: MonadIO m => B.ByteString -> Pipeline -> m (Maybe UniformLocation)
+getUniformLocation name pipeline = liftIO $
+    withResource (resourcePL pipeline) $ \(Pipeline_ program) ->
+        B.useAsCString name $ \cstr -> do
+            r <- glGetUniformLocation program cstr
+            return (if (r == -1) then Nothing else Just $ fromIntegral r)
+
+-- | Returns an attribute location for a given name, or ``Nothing` if uniform is
+--   not active or does not exist.
+getAttributeLocation :: MonadIO m => B.ByteString -> Pipeline -> m (Maybe AttributeLocation)
+getAttributeLocation name pipeline = liftIO $
+    withResource (resourcePL pipeline) $ \(Pipeline_ program) ->
+        B.useAsCString name $ \cstr -> do
+            r <- glGetAttribLocation program cstr
+            return (if (r == -1) then Nothing else Just $ fromIntegral r)
 
 -- context local pipeline
 newtype CLNopPipeline = CLNopPipeline { unwrapCLNop :: Pipeline }
