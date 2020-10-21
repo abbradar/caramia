@@ -695,10 +695,10 @@ cdouble2Float (CDouble dbl) = double2Float dbl
 -- The uniform may not be in the shader or it may not be active. If this
 -- happens, a special uniform location is returned that can be used in
 -- `setUniform` to make it do nothing.
-getUniformLocation :: MonadIO m => T.Text -> Pipeline -> m UniformLocation
+getUniformLocation :: MonadIO m => B.ByteString -> Pipeline -> m UniformLocation
 getUniformLocation name pipeline = liftIO $ fromIntegral <$>
     withResource (resourcePL pipeline) (\(Pipeline_ program) ->
-         B.useAsCString (T.encodeUtf8 name) $ \cstr ->
+         B.useAsCString name $ \cstr ->
              glGetUniformLocation program cstr)
 
 -- context local pipeline
