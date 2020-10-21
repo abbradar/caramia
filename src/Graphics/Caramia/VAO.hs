@@ -38,6 +38,7 @@ import Graphics.Caramia.Internal.Exception
 import Graphics.Caramia.Internal.OpenGLCApi
 import Graphics.Caramia.Prelude
 import Graphics.Caramia.Resource
+import Graphics.Caramia.Shader
 import Graphics.Caramia.VAO.Internal
 import Graphics.GL.Ext.ARB.VertexArrayObject
 
@@ -149,7 +150,7 @@ instance SourceableType Double where
 data Sourcing = Sourcing
     { offset :: Int
     -- ^ Offset, in bytes, at which point from buffer to start sourcing.
-    , attributeIndex :: Int
+    , attributeIndex :: AttributeLocation
     -- ^ Which attribute index in a shader program to source this data. See
     -- `Caramia.Shader` on attributes.
     , components :: Int
