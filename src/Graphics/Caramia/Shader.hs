@@ -36,10 +36,14 @@ module Graphics.Caramia.Shader
     , getShaderLog
     , getPipelineLog
     -- * Attribute bindings
+    , AttributeInfo(..)
+    , getActiveAttributes
     , getAttributeLocation
     , AttributeBindings
     , AttributeLocation
     -- * Uniforms
+    , UniformInfo(..)
+    , getActiveUniforms
     , setUniform
     , getUniformLocation
     , Uniformable()
@@ -83,9 +87,43 @@ import Linear.V1
 import Linear.V2
 import Linear.V3
 import Linear.V4
+import Graphics.GL.Ext.ARB.VertexAttrib64bit
+
+type AttributeLocation = GLuint
+
+-- | Attribute variable types.
+data AttributeType =
+     AFloat
+   | AInt32
+   | AWord32
+   | ADouble
+   deriving ( Eq, Ord, Show, Read, Typeable, Data, Generic )
+
+data AttributeInfo = AttributeInfo
+    {
+      attributeName :: !B.ByteString
+    -- ^ Attribute name.
+    , attributeComponents :: !(V2 Int)
+    -- ^ Number of attribute components. For example, (V2 1 2) corresponds to VEC2.
+    , attributeType :: !AttributeType
+    -- ^ Attribute data type.
+    , attributeSize :: !Int
+    -- ^ Attribute size (i.e. size of a fixed array, or 1 if attribute is not an array).
+    }
+    deriving ( Eq, Ord, Show, Read, Typeable, Data, Generic )
 
 type UniformLocation = GLuint
-type AttributeLocation = GLuint
+
+data UniformInfo = UniformInfo
+    {
+      uniformName :: !B.ByteString
+    -- ^ Uniform name.
+    , uniformRawType :: !GLenum
+    -- ^ Raw uniform data type.
+    , uniformSize :: !Int
+    -- ^ Uniform size (i.e. size of a fixed array, or 1 if uniform is not an array).
+    }
+    deriving ( Eq, Ord, Show, Read, Typeable, Data, Generic )
 
 -- TODO: add tesselation shaders
 
@@ -692,6 +730,32 @@ instance Uniformable (M44 Float) where
 cdouble2Float :: CDouble -> Float
 cdouble2Float (CDouble dbl) = double2Float dbl
 
+getActiveVariables :: MonadIO m => GLenum -> GLenum -> (GLuint -> GLuint -> GLsizei -> Ptr GLsizei -> Ptr GLint -> Ptr GLenum -> Ptr GLchar -> IO ()) -> Pipeline -> m [(B.ByteString, GLenum, Int)]
+getActiveVariables glActiveVariables glActiveVariableMaxLength glGetActiveVariable pipeline = liftIO $
+    withResource (resourcePL pipeline) $ \(Pipeline_ program) -> do
+        variables_len <- gget $ glGetProgramiv program glActiveVariables
+        variable_max_str <- gget $ glGetProgramiv program glActiveVariableMaxLength
+        forM [0..safeFromIntegral variables_len - 1] $ \i ->
+            allocaBytes (safeFromIntegral variable_max_str) $ \name_str ->
+            alloca $ \length_ptr ->
+            alloca $ \size_ptr ->
+            alloca $ \type_ptr -> do
+                glGetActiveVariable program i variable_max_str length_ptr size_ptr type_ptr name_str
+                length_ret <- peek length_ptr
+                size_ret <- peek size_ptr
+                type_ret <- peek type_ptr
+                name <- B.packCStringLen ( name_str
+                                         , safeFromIntegral $ max 0 $ length_ret-1 )
+                return (name, type_ret, fromIntegral size_ret)
+
+-- | Returns number of active attribute variables in a pipeline.
+getActiveUniforms :: MonadIO m => Pipeline -> m [UniformInfo]
+getActiveUniforms pipeline = map getInfo <$> getActiveVariables GL_ACTIVE_UNIFORMS GL_ACTIVE_UNIFORM_MAX_LENGTH glGetActiveUniform pipeline
+    where getInfo (name, type_ret, size) = UniformInfo { uniformName = name
+                                                       , uniformRawType = type_ret
+                                                       , uniformSize = size
+                                                       }
+
 -- | Returns a uniform location for a given name, or ``Nothing` if uniform is
 --   not active or does not exist.
 getUniformLocation :: MonadIO m => B.ByteString -> Pipeline -> m (Maybe UniformLocation)
@@ -700,6 +764,55 @@ getUniformLocation name pipeline = liftIO $
         B.useAsCString name $ \cstr -> do
             r <- glGetUniformLocation program cstr
             return (if (r == -1) then Nothing else Just $ fromIntegral r)
+
+parseAttribType :: GLenum -> (V2 Int, AttributeType)
+parseAttribType GL_FLOAT = (V2 1 1, AFloat)
+parseAttribType GL_FLOAT_VEC2 = (V2 1 2, AFloat)
+parseAttribType GL_FLOAT_VEC3 = (V2 1 3, AFloat)
+parseAttribType GL_FLOAT_VEC4 = (V2 1 4, AFloat)
+parseAttribType GL_FLOAT_MAT2 = (V2 2 2, AFloat)
+parseAttribType GL_FLOAT_MAT3 = (V2 3 3, AFloat)
+parseAttribType GL_FLOAT_MAT4 = (V2 4 4, AFloat)
+parseAttribType GL_FLOAT_MAT2x3 = (V2 3 2, AFloat)
+parseAttribType GL_FLOAT_MAT2x4 = (V2 4 2, AFloat)
+parseAttribType GL_FLOAT_MAT3x2 = (V2 2 3, AFloat)
+parseAttribType GL_FLOAT_MAT3x4 = (V2 4 3, AFloat)
+parseAttribType GL_FLOAT_MAT4x2 = (V2 2 4, AFloat)
+parseAttribType GL_FLOAT_MAT4x3 = (V2 3 4, AFloat)
+parseAttribType GL_INT = (V2 1 1, AInt32)
+parseAttribType GL_INT_VEC2 = (V2 1 2, AInt32)
+parseAttribType GL_INT_VEC3 = (V2 1 3, AInt32)
+parseAttribType GL_INT_VEC4 = (V2 1 4, AInt32)
+parseAttribType GL_UNSIGNED_INT = (V2 1 1, AWord32)
+parseAttribType GL_UNSIGNED_INT_VEC2 = (V2 1 2, AWord32)
+parseAttribType GL_UNSIGNED_INT_VEC3 = (V2 1 3, AWord32)
+parseAttribType GL_UNSIGNED_INT_VEC4 = (V2 1 4, AWord32)
+parseAttribType GL_DOUBLE = (V2 1 1, ADouble)
+parseAttribType GL_DOUBLE_VEC2 = (V2 1 2, ADouble)
+parseAttribType GL_DOUBLE_VEC3 = (V2 1 3, ADouble)
+parseAttribType GL_DOUBLE_VEC4 = (V2 1 4, ADouble)
+parseAttribType GL_DOUBLE_MAT2 = (V2 2 2, ADouble)
+parseAttribType GL_DOUBLE_MAT3 = (V2 3 3, ADouble)
+parseAttribType GL_DOUBLE_MAT4 = (V2 4 4, ADouble)
+parseAttribType GL_DOUBLE_MAT2x3 = (V2 3 2, ADouble)
+parseAttribType GL_DOUBLE_MAT2x4 = (V2 4 2, ADouble)
+parseAttribType GL_DOUBLE_MAT3x2 = (V2 2 3, ADouble)
+parseAttribType GL_DOUBLE_MAT3x4 = (V2 4 3, ADouble)
+parseAttribType GL_DOUBLE_MAT4x2 = (V2 2 4, ADouble)
+parseAttribType GL_DOUBLE_MAT4x2 = (V2 2 4, ADouble)
+parseAttribType GL_DOUBLE_MAT4x3 = (V2 3 4, ADouble)
+parseAttribType _ = error "parseType: invalid type enum value"
+
+-- | Returns number of active attribute variables in a pipeline.
+getActiveAttributes :: MonadIO m => Pipeline -> m [AttributeInfo]
+getActiveAttributes pipeline = map getInfo <$> getActiveVariables GL_ACTIVE_ATTRIBUTES GL_ACTIVE_ATTRIBUTE_MAX_LENGTH glGetActiveAttrib pipeline
+    where getInfo (name, type_ret, size) =
+              let (components, sourceType) = parseAttribType type_ret
+              in AttributeInfo { attributeName = name
+                               , attributeComponents = components
+                               , attributeType = sourceType
+                               , attributeSize = size
+                               }
 
 -- | Returns an attribute location for a given name, or ``Nothing` if uniform is
 --   not active or does not exist.
