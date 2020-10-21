@@ -72,10 +72,12 @@ waitFence useconds (Fence{ resource = resource }) =
     withResource resource $ \fencesync -> do
         ret <- glClientWaitSync fencesync GL_SYNC_FLUSH_COMMANDS_BIT
                                 (fromIntegral actual_seconds)
-        if | ret == GL_ALREADY_SIGNALED -> return True
-           | ret == GL_TIMEOUT_EXPIRED -> return False
-           | ret == GL_CONDITION_SATISFIED -> return True
-           | ret == GL_WAIT_FAILED -> return True -- should we throw an error?
+        case ret of
+          GL_ALREADY_SIGNALED -> return True
+          GL_TIMEOUT_EXPIRED -> return False
+          GL_CONDITION_SATISFIED -> return True
+          GL_WAIT_FAILED -> return True -- should we throw an error?
+          _ -> error "waitFence: invalid return value"
   where
     actual_seconds :: Word64
     actual_seconds =
