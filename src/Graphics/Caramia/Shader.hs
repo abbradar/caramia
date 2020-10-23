@@ -745,7 +745,7 @@ getActiveVariables glActiveVariables glActiveVariableMaxLength glGetActiveVariab
                 size_ret <- peek size_ptr
                 type_ret <- peek type_ptr
                 name <- B.packCStringLen ( name_str
-                                         , safeFromIntegral $ max 0 $ length_ret-1 )
+                                         , safeFromIntegral $ max 0 length_ret )
                 return (name, type_ret, fromIntegral size_ret)
 
 -- | Returns number of active attribute variables in a pipeline.
