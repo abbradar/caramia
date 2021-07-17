@@ -696,6 +696,7 @@ data MagFilter =
 data Wrapping =
    Clamp
  | Repeat
+ | MirroredRepeat
  deriving ( Eq, Ord, Show, Read, Typeable, Data, Generic, Enum )
 
 -- | Texture comparison modes.
@@ -713,6 +714,7 @@ toConstantC CompareRefToTexture = GL_COMPARE_REF_TO_TEXTURE
 toConstantW :: Wrapping -> GLenum
 toConstantW Clamp = GL_CLAMP_TO_EDGE
 toConstantW Repeat = GL_REPEAT
+toConstantW MirroredRepeat = GL_MIRRORED_REPEAT
 
 instance TexParam MinFilter where
     tpEnum _ = GL_TEXTURE_MIN_FILTER
@@ -795,6 +797,7 @@ getWrapping tex = liftIO $ withBindingByTopology tex $ \target ->
         return $ if
             | result == GL_CLAMP_TO_EDGE -> Clamp
             | result == GL_REPEAT -> Repeat
+            | result == GL_MIRRORED_REPEAT -> MirroredRepeat
             | otherwise -> error "getWrapping: unexpected wrapping mode."
 
 setAnisotropy :: (MonadIO m, MonadMask m) => Float -> Texture -> m ()
