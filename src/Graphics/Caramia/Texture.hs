@@ -27,8 +27,13 @@ module Graphics.Caramia.Texture
     -- * Mipmapping
     , generateMipmaps
     -- * Texture parameters
+    , setWrapS
+    , setWrapT
+    , setWrapR
     , setWrapping
-    , getWrapping
+    , getWrapS
+    , getWrapT
+    , getWrapR
     , setMinFilter
     , setMagFilter
     , getMinFilter
@@ -765,14 +770,24 @@ getTexParam tex = liftIO $ withBindingByTopology tex $ \target ->
         glGetTexParameteriv target (tpEnum (undefined :: a)) result_ptr
         tpFromConstant . fromIntegral <$> peek result_ptr
 
+setWrapping' :: (MonadIO m, MonadMask m) => GLenum -> Wrapping -> Texture -> m ()
+setWrapping' param wrapping tex = withBindingByTopology tex $ \target -> do
+    glTexParameteri target param $ fromIntegral $ toConstantW wrapping
+
+setWrapS :: (MonadIO m, MonadMask m) => Wrapping -> Texture -> m ()
+setWrapS = setWrapping' GL_TEXTURE_WRAP_S
+
+setWrapT :: (MonadIO m, MonadMask m) => Wrapping -> Texture -> m ()
+setWrapT = setWrapping' GL_TEXTURE_WRAP_T
+
+setWrapR :: (MonadIO m, MonadMask m) => Wrapping -> Texture -> m ()
+setWrapR = setWrapping' GL_TEXTURE_WRAP_R
+
 setWrapping :: (MonadIO m, MonadMask m) => Wrapping -> Texture -> m ()
-setWrapping wrapping tex = withBindingByTopology tex $ \target -> do
-    glTexParameteri target GL_TEXTURE_WRAP_S
-                           (fromIntegral $ toConstantW wrapping)
-    glTexParameteri target GL_TEXTURE_WRAP_T
-                           (fromIntegral $ toConstantW wrapping)
-    glTexParameteri target GL_TEXTURE_WRAP_R
-                           (fromIntegral $ toConstantW wrapping)
+setWrapping wrapping tex = do
+    setWrapS wrapping tex
+    setWrapT wrapping tex
+    setWrapR wrapping tex
 
 setCompareMode :: (MonadIO m, MonadMask m) => CompareMode -> Texture -> m ()
 setCompareMode cmp_mode tex = withBindingByTopology tex $ \target ->
@@ -789,16 +804,25 @@ getCompareMode tex = liftIO $ withBindingByTopology tex $ \target ->
             | result == GL_COMPARE_REF_TO_TEXTURE -> CompareRefToTexture
             | otherwise -> error "getCompareMode: unexpected comparing mode."
 
-getWrapping :: (MonadIO m, MonadMask m) => Texture -> m Wrapping
-getWrapping tex = liftIO $ withBindingByTopology tex $ \target ->
+getWrapping' :: (MonadIO m, MonadMask m) => GLenum -> Texture -> m Wrapping
+getWrapping' param tex = liftIO $ withBindingByTopology tex $ \target ->
     alloca $ \result_ptr -> do
-        glGetTexParameteriv target GL_TEXTURE_WRAP_S result_ptr
+        glGetTexParameteriv target param result_ptr
         result <- peek result_ptr
         return $ if
             | result == GL_CLAMP_TO_EDGE -> Clamp
             | result == GL_REPEAT -> Repeat
             | result == GL_MIRRORED_REPEAT -> MirroredRepeat
-            | otherwise -> error "getWrapping: unexpected wrapping mode."
+            | otherwise -> error "getWrapping': unexpected wrapping mode."
+
+getWrapS :: (MonadIO m, MonadMask m) => Texture -> m Wrapping
+getWrapS = getWrapping' GL_TEXTURE_WRAP_S
+
+getWrapT :: (MonadIO m, MonadMask m) => Texture -> m Wrapping
+getWrapT = getWrapping' GL_TEXTURE_WRAP_T
+
+getWrapR :: (MonadIO m, MonadMask m) => Texture -> m Wrapping
+getWrapR = getWrapping' GL_TEXTURE_WRAP_R
 
 setAnisotropy :: (MonadIO m, MonadMask m) => Float -> Texture -> m ()
 setAnisotropy ani tex = withBindingByTopology tex $ \target ->
